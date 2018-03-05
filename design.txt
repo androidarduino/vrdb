@@ -26,3 +26,10 @@ Data的特性：
 
 分为灾难性应激和非灾难性进化
 一群节点互相比拼，更有效的节点会有机会把基因扩散到其他节点，用神经网络学习来决定两个节点的相似性
+
+network connection:
+
+1. Use udp not tcp to speed up
+2. Udp send, wait for udp response, if no response is issued, send again or try another server
+3. All udp packages will have a tracking id, if some of them are missing, retry with the id
+

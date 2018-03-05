@@ -2,6 +2,9 @@
 #include <string>
 #include <vector>
 #include <unique_ptr>
+
+namespace VRDBClient {
+using namespace std;
 #typedef Version unsigned long long
 
 class Key {
@@ -46,4 +49,6 @@ public:
 private:
 	Value _getKey(Hash& hash, Mode& mode);
 	void _publish(Hash& hash, Value& value, Mode& mode);
+};
+
 };

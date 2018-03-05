@@ -1,0 +1,5 @@
+client consists of three parts: communication, cache, router
+
+Communication: manages sending and receiving udp requests
+Cache: local cache for hot keys
+Router: local routing table, stores the most recent routing information, and load of nodes
