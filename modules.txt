@@ -1,0 +1,41 @@
+Proposed modules:
+
+1. universal router: store all routing information. usually the client should be able to connect to the node with memorized connection information, if not, it turns to the universal router for routing information
+2. node: the actual data storage, including cache and database, it will have a set of self managed replicas
+3. queue: owned by replication group, make reading/writing sequential for one set of replicas
+4. time stamp server: stamp a request with time stamp when it comes in, so that we can tell the sequence of read/write
+
+Distributed system patterns:
+
+1. one produce, one consume. the best solution for this is to directly forward the publish to the consumer, or find a best relay node in the middle to log the publish and ensure consumer get the result
+2. one produce, many consume. the best solution is to flood the publish to a relay tree, ask the relay tree to forward the thing to all consumers and ensure receiptent
+3. many produce, many consume. depends on how critical the consistent needs to be. if must be strictly consistent, the producers must go through one queue node, the queue node flood the results to a relay tree, make the tree to forward to the consumers. if the conssitency is not so important, all producers can directly flood to the relay tree and make the result forwaded to the consumers
+4. many produce, one consume. all producers go through one queue node, queue node notify the consumer
+
+Push/Read mode:
+
+1. in push mode, all the update data were pushed to the client cache, so it gets ready asap
+2. in read mode, the data will not be updated until client initializes a read process
+
+Version tracking:
+
+the client can check the time stamp and refresh manually if the data is too old. when the read/write request comes in, it is assigned with a time stamp server based on its scope, within the whole scope, we can ensure the uniqueness of time stamp, and tell when it comes in. the time stamp consists of two parts, the unix time, and the count within the same micro seconds.
+
+with time stamp enabled, we can queue all the requests and tell whether it is newer, or older than what we have. when the time stamp server is reboots, it will recover from the latest logged timestamp and continue.
+
+Relations:
+
+we categorize client into two types, external clients and internal clients. for internal client data, we try to put them in an relational order so that internal clients can get them easily without a lot of transmission. for external clients we distribute the data based on how the client access their data. if their habit changes, we rearrange the data accordingly to optimize against their preference. usually the external clients will access only one or several scopes of data, we can optimize the physical data distribution for their best performance. we can even build up a chain or tree structure for a set of related external clients so that they can access data the fastest way
+
+Use case:
+
+1. when client send a request, it checks cache for valid data, if found, return
+2. if not found in cache or data expired, it check for connections of this scope/key, if not found, query the universal router for a connection, the universal router will forward the request to the apporporate node, next time the client will remember where the scope/key is in
+3. if connection is found, client will try to connect to the node and ask for data
+4. all data are in udp mode to speed up things
+5. when the node changes, it will notify the universal router, the universal router will broadcast to all universal routers
+6. each scope/key maps to a set of nodes, universal router is responsible to determine which one to give to the client. when a node is too busy, it can tell the client I am busy, then the client can ask the universal router for an alternative
+7. if the client find a node slow or not responding, it will tell the universal router for an alternative, and check the node's health
+8. the replication group has a structure, a set of scope/key combination maps to a single graph, that the nodes get flooded as quick as possible when they needs to be replicated, this can be taken as a small piece of program that does the replication, however it changes when the nodes in the replication set changes
+9. the hash algorithm is also a small piece of program with special cases and different hash algorithms, we teach the program how to apply different algorithms so that it can produce a partition map with best efficiency and reasonable size, it can use trie, hash, case, if, etc.
+10. when doing replication or forwarding, we consider the data as data only, it will find the best approach to copy and progressively update

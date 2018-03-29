@@ -51,4 +51,9 @@ We need a map from partition to endpoints, and endpoints to host to find where t
 
 To simplify, we create a cradle for each host only for now. Running multiple cradles on the same host will have disk usage competition and network competition problems. We will address these problems in the future. Alternatively, we can just use one cradle for each host, but creating multiple threads to run different set of endpoints. This would be a little bit simpler but still chanllenging.
 
+Each endpoint maintains a heat map. In the heap map it will statistic the access rate histogram of the partition, and tell whether we should repartition the group or not. If part of the partition goes too hot and the rest part are cold, splitting them would be a good idea.
+
+Load balancing the partitions. Put those cold partitions with large data into low profile hosts with large storage but less computation resources. Put the hot partitions into the powerful hosts, ensuring less endpoints are running on those hosts to keep the efficiency.
+
+Hot partitions and cold partitions should interlace to balance access. Cold partitions have larger store that takes more space, hot partitions have small store but large cache. Moving hot partitions around would be easier, just copy the database file to a new host with capacities, and start priming the cache.
 
