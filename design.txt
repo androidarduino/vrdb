@@ -57,3 +57,6 @@ Load balancing the partitions. Put those cold partitions with large data into lo
 
 Hot partitions and cold partitions should interlace to balance access. Cold partitions have larger store that takes more space, hot partitions have small store but large cache. Moving hot partitions around would be easier, just copy the database file to a new host with capacities, and start priming the cache.
 
+To facilitise repartitioning, all we need to do is to fine split the store database files. An endpoint could manage 1 - 100 files, which brings 100 times scalability to the endpoint. It could transfer a number of files to adjacent endpoint when needed, or form a new endpoint to manage them. This will bring us the fine control over balancing the storage mapping to partitions. Endpoint should also keep monitoring the access histogram of its partition, using the histogram to manage auto repartitioning on the fly.
+
+
