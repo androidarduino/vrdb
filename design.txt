@@ -33,3 +33,22 @@ network connection:
 2. Udp send, wait for udp response, if no response is issued, send again or try another server
 3. All udp packages will have a tracking id, if some of them are missing, retry with the id
 
+process management:
+
+There would be thousands of endpoints per host, however there would not be so many cpu cores available for each endopint. Thus we must implement a process management system ourself. We can not use the linux system process or thread system because linux has limits for processes (threads similarly), and thousands of processes will run very slowly in linux.
+
+We will create a cradle process for each cpu core in the system. Each cradle process will have only one socket listener, processing incoming and outgoing messages. Each process will also have a container for thousands of endpoints. An endpoint is an instance in the container. It will have its own stack for partition map, health, qos, and other compulsory items unique to each endpoint. Requests and replies will be handled within process owned containers to save cost. Each endpoint will also take care of its own BDB(possibly some other key value persistent store). When the requests and replies needs to read or write, they will queue some tasks for the store reader or writer, the process will make asyn calls to fetch data from database.
+
+The endpoints should made as small as possible. Micro endpoints make scaling and repartitioning easy and low cost, so that the cluster could make frequent repartitioning as needed to adapt to fast changing request model.
+
+Once it is found a partition goes over size, it will split itself into two, so that two endpoints could share its workload. Once an endpoint gets hot, it will try to replicate itself into some other free hosts, so that its partition get more replicas to serve the requests. Writing hot could be solved by assigning different keys to different endpoints in the same partition, and reading with the same strategy. Reading hot could be solved by caching or creating more replicas that near the requesters. A partition should have different strategies to adapt to different kind of data flow mode.
+
+All endpoints should be able to backup themselves somewhere in the cluster in real time. Each of them will try to copy themselves to some other hosts which have free space. Once the endpoints accidentally died, they should immediately start working on those hosts without any host replacement process.
+
+The endpoints should be able to monitor the host health status. Once the host have more hardware errors, or other sign that it could go bad, it should consider migrating to other hosts.
+
+We need a map from partition to endpoints, and endpoints to host to find where the request goes to. Endpoints only talk to other endpoints in the same partition, they are not aware of any endpoint outside the partition.
+
+To simplify, we create a cradle for each host only for now. Running multiple cradles on the same host will have disk usage competition and network competition problems. We will address these problems in the future. Alternatively, we can just use one cradle for each host, but creating multiple threads to run different set of endpoints. This would be a little bit simpler but still chanllenging.
+
+
