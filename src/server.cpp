@@ -1,8 +1,10 @@
 #include "server.h"
 #include <chrono>
 #include <filesystem>
-#include <iostream>  // For std::cerr
+#include <iostream>  // For std::cerr and std::cout
 #include <algorithm> // For std::sort
+#include <cstring>   // For memset
+
 using namespace std;
 namespace fs = std::filesystem; // For filesystem operations
 
@@ -11,12 +13,38 @@ namespace fs = std::filesystem; // For filesystem operations
  * @param address The network address the server will listen on.
  * @param port The port number the server will listen on.
  */
-Server::Server(const string &address, int port)
+Server::Server(const string &address, int port) : _server_address(address), _port(port), _server_fd(-1), _new_socket(-1), storage(nullptr), rh(nullptr)
 {
-    // todo: create listening service
-    _port = port;
+    _addrlen = sizeof(_address);
+    memset(&_address, 0, _addrlen);
+
+    // Create socket file descriptor
+    if ((_server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+    {
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Set socket options to reuse address and port
+    int opt = 1;
+    if (setsockopt(_server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt)))
+    {
+        perror("setsockopt");
+        exit(EXIT_FAILURE);
+    }
+    _address.sin_family = AF_INET;
+    _address.sin_addr.s_addr = inet_addr(address.c_str());
+    _address.sin_port = htons(port);
+
+    // Bind the socket to the specified IP and port
+    if (::bind(_server_fd, (struct sockaddr *)&_address, _addrlen) < 0)
+    {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+
     this->storage = new Storage(this); // Initialize Storage with a pointer to this Server instance
-    this->rh = new RequestHandler();   // Assuming RequestHandler is implemented elsewhere
+    // RequestHandler is no longer used, removed initialization
 }
 
 /**
@@ -25,7 +53,8 @@ Server::Server(const string &address, int port)
 Server::~Server()
 {
     delete this->storage;
-    delete this->rh;
+    // RequestHandler is no longer used, removed deletion
+    shutdown(); // Ensure socket is closed on destruction
 }
 
 /**
@@ -33,7 +62,75 @@ Server::~Server()
  */
 void Server::start()
 {
-    printf("Server starting\n");
+    // Listen for incoming connections
+    if (listen(_server_fd, 3) < 0) // Max 3 pending connections
+    {
+        perror("listen");
+        exit(EXIT_FAILURE);
+    }
+    cout << "Server listening on " << _server_address << ":" << _port << endl;
+
+    while (true)
+    {
+        cout << "\nWaiting for a connection..." << endl;
+        if ((_new_socket = accept(_server_fd, (struct sockaddr *)&_address, (socklen_t *)&_addrlen)) < 0)
+        {
+            perror("accept");
+            exit(EXIT_FAILURE);
+        }
+
+        char buffer[1024] = {0};
+        long valread = read(_new_socket, buffer, 1024);
+        if (valread < 0)
+        {
+            perror("read");
+            close(_new_socket);
+            continue;
+        }
+        string request_str(buffer, valread);
+        cout << "Received request: " << request_str << endl;
+
+        Request req = Request::deserialize(request_str);
+        Response res;
+
+        switch (req.type)
+        {
+        case RequestType::GET:
+        {
+            string value = get(req.key);
+            if (!value.empty())
+            {
+                res = Response(true, "VALUE", value);
+            }
+            else
+            {
+                res = Response(false, "Key not found: " + req.key);
+            }
+            break;
+        }
+        case RequestType::PUT:
+        {
+            bool success = put(req.key, req.value);
+            if (success)
+            {
+                res = Response(true, "OK");
+            }
+            else
+            {
+                res = Response(false, "Failed to put key: " + req.key);
+            }
+            break;
+        }
+        default:
+            res = Response(false, "Unknown request type");
+            break;
+        }
+
+        string response_str = res.serialize();
+        send(_new_socket, response_str.c_str(), response_str.length(), 0);
+        cout << "Sent response: " << response_str << endl;
+        close(_new_socket);
+    }
 }
 
 /**
@@ -41,7 +138,12 @@ void Server::start()
  */
 void Server::shutdown()
 {
-    printf("Server shutting down\n");
+    cout << "Server shutting down..." << endl;
+    if (_server_fd != -1)
+    {
+        close(_server_fd);
+        _server_fd = -1;
+    }
 }
 
 /**
@@ -52,7 +154,7 @@ void Server::shutdown()
  */
 bool Server::put(const string &key, const string &payload)
 {
-    printf("putting key %s to database with payload %s\n", key.c_str(), payload.c_str());
+    cout << "putting key " << key << " to database with payload " << payload << endl;
     this->storage->main_mdb->put(key, payload);
     this->storage->check_for_compaction(); // Trigger compaction check after each put
     return true;
@@ -65,7 +167,7 @@ bool Server::put(const string &key, const string &payload)
  */
 string Server::get(const string &key)
 {
-    printf("getting key %s from database\n", key.c_str());
+    cout << "getting key " << key << " from database" << endl;
     // First, check main_mdb, then second_mdb, then SSTables on disk
     string value = this->storage->main_mdb->get(key);
     if (!value.empty())

@@ -10,6 +10,8 @@ TMPDIR = tmp/
 # Source files
 SERVER_SRCS = $(SRCDIR)server.cpp $(SRCDIR)database.cpp
 SERVER_OBJS = $(TMPDIR)server.o $(TMPDIR)database.o
+MAIN_SRC = $(SRCDIR)main.cpp
+MAIN_OBJ = $(TMPDIR)main.o
 
 # Test files
 TEST_DATABASE_SRC = $(TESTDIR)test_database.cpp
@@ -25,19 +27,20 @@ SST_CLI_SRC = $(UTILSDIR)sst_cli.cpp
 SST_CLI_OBJ = $(TMPDIR)sst_cli.o
 
 # All object files that might be generated in the root directory
-ALL_OBJS = $(SERVER_OBJS) $(TEST_DATABASE_OBJ) $(TEST_SERVER_OBJ) $(PERFORMANCE_TEST_OBJ) $(SST_CLI_OBJ)
+ALL_OBJS = $(SERVER_OBJS) $(MAIN_OBJ) $(TEST_DATABASE_OBJ) $(TEST_SERVER_OBJ) $(PERFORMANCE_TEST_OBJ) $(SST_CLI_OBJ)
 
 # Executables
 TEST_DATABASE_EXEC = $(BUILDDIR)test_database
 TEST_SERVER_EXEC = $(BUILDDIR)test_server
 PERFORMANCE_TEST_EXEC = $(BUILDDIR)performance_test
 SST_CLI_EXEC = $(BUILDDIR)sst_cli
+SERVER_EXEC = $(BUILDDIR)server
 
-ALL_EXECS = $(TEST_DATABASE_EXEC) $(TEST_SERVER_EXEC) $(PERFORMANCE_TEST_EXEC) $(SST_CLI_EXEC)
+ALL_EXECS = $(TEST_DATABASE_EXEC) $(TEST_SERVER_EXEC) $(PERFORMANCE_TEST_EXEC) $(SST_CLI_EXEC) $(SERVER_EXEC)
 
-.PHONY: all test utils clean
+.PHONY: all test utils clean server
 
-all: $(ALL_EXECS) $(SST_CLI_EXEC)
+all: $(ALL_EXECS)
 
 $(BUILDDIR)libserver.a: $(SERVER_OBJS) | $(BUILDDIR)
 	ar rcs $@ $^
@@ -78,6 +81,11 @@ $(PERFORMANCE_TEST_EXEC): $(PERFORMANCE_TEST_OBJ) $(BUILDDIR)libserver.a
 utils: $(SST_CLI_EXEC)
 
 $(SST_CLI_EXEC): $(SST_CLI_OBJ) $(BUILDDIR)libserver.a
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
+server: $(SERVER_EXEC)
+
+$(SERVER_EXEC): $(MAIN_OBJ) $(BUILDDIR)libserver.a
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 clean:

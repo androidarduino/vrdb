@@ -8,6 +8,10 @@
 #include <vector>
 #include <chrono>
 #include <filesystem>
+#include <sys/socket.h> // For socket, bind, listen, accept
+#include <netinet/in.h> // For sockaddr_in
+#include <unistd.h>     // For close
+#include <arpa/inet.h>  // For inet_ntoa
 
 using namespace std;
 
@@ -127,6 +131,11 @@ public:
     Storage *storage;
 
 private:
+    int _server_fd;              // Server socket file descriptor
+    int _new_socket;             // New socket for accepted client connections
+    struct sockaddr_in _address; // Server address structure
+    int _addrlen;
+    string _server_address;
     int _port;
     RequestHandler *rh;
 };
