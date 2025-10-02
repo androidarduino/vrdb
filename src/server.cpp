@@ -13,9 +13,13 @@ namespace fs = std::filesystem; // For filesystem operations
  * @param address The network address the server will listen on.
  * @param port The port number the server will listen on.
  */
-Server::Server(const string &address, int port) : _server_address(address), _port(port), _server_fd(-1), _new_socket(-1), storage(nullptr), rh(nullptr)
+Server::Server(const string &address, int port) : _server_fd(-1),
+                                                  _new_socket(-1),
+                                                  _addrlen(sizeof(_address)),
+                                                  _server_address(address),
+                                                  _port(port),
+                                                  storage(nullptr)
 {
-    _addrlen = sizeof(_address);
     memset(&_address, 0, _addrlen);
 
     // Create socket file descriptor

@@ -137,7 +137,7 @@ private:
     int _addrlen;
     string _server_address;
     int _port;
-    RequestHandler *rh;
+    // RequestHandler *rh; // Removed RequestHandler as it's no longer used
 };
 
 string getCurrentUnixTimeString();
