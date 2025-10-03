@@ -12,6 +12,7 @@
 #include <netinet/in.h> // For sockaddr_in
 #include <unistd.h>     // For close
 #include <arpa/inet.h>  // For inet_ntoa
+#include <signal.h>     // Required for signal handling
 
 using namespace std;
 
@@ -133,16 +134,23 @@ public:
     ~Server();
 
     // Changed for testing purposes
-public:
-    Storage *storage;
-
 private:
+    static volatile sig_atomic_t _running; // Flag to control the server's main loop
+    static Server *_instance;              // Static pointer to the Server instance
+
+    // Static signal handler to allow C-style signal function to access Server members
+    static void handle_signal(int signal);
+
     int _server_fd;              // Server socket file descriptor
     int _new_socket;             // New socket for accepted client connections
     struct sockaddr_in _address; // Server address structure
+    string _server_address;      // Server address structure
     int _addrlen;
-    string _server_address;
     int _port;
+
+public: // Changed for testing purposes
+    Storage *storage;
+
     // RequestHandler *rh; // Removed RequestHandler as it's no longer used
 };
 

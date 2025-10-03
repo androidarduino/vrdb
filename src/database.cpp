@@ -14,6 +14,7 @@ MemTable::MemTable()
 
 SSTable *MemTable::flush(const string &filename)
 {
+    std::cerr << "MemTable::flush called for filename: " << filename << std::endl;
     std::vector<KeyValuePair> sorted_data;
     for (auto const &[key, val] : data)
     {
@@ -22,9 +23,12 @@ SSTable *MemTable::flush(const string &filename)
     // SSTables require sorted data
     std::sort(sorted_data.begin(), sorted_data.end());
 
+    std::cerr << "Flushing " << sorted_data.size() << " key-value pairs to SSTable." << std::endl;
+
     SSTable *new_sst = new SSTable(DATADIR + filename, false); // Use DATADIR
     if (!new_sst->writeFromMemory(sorted_data))
     {
+        std::cerr << "Error: Failed to write MemTable to SSTable file: " << filename << std::endl;
         delete new_sst;
         return nullptr; // Handle error
     }
@@ -135,10 +139,12 @@ uint64_t SSTable::readUint64(std::ifstream &in)
 
 bool SSTable::writeFromMemory(const std::vector<KeyValuePair> &memtable)
 {
+    std::cerr << "SSTable::writeFromMemory called for file: " << filePath << " with " << memtable.size() << " entries." << std::endl;
     std::filesystem::path dir_path = std::filesystem::path(filePath).parent_path();
     std::cerr << "Attempting to create directories: " << dir_path << std::endl;
     std::error_code ec;
-    if (!std::filesystem::create_directories(dir_path, ec))
+    // Only return false if create_directories fails AND reports an actual error
+    if (!std::filesystem::create_directories(dir_path, ec) && ec)
     {
         std::cerr << "Error creating directories: " << dir_path << ", error: " << ec.message() << std::endl;
         return false;
@@ -162,6 +168,7 @@ bool SSTable::writeFromMemory(const std::vector<KeyValuePair> &memtable)
     {
         // Record the start of the block and its first key for the index.
         tempIndex[memtable[i].key] = currentOffset;
+        std::cerr << "Writing block starting with key: " << memtable[i].key << " at offset: " << currentOffset << std::endl;
 
         // Determine the end of the current block.
         size_t end = std::min(i + BLOCK_SIZE, memtable.size());
@@ -174,13 +181,16 @@ bool SSTable::writeFromMemory(const std::vector<KeyValuePair> &memtable)
         {
             this->writeString(outFile, memtable[j].key);
             this->writeString(outFile, memtable[j].value);
+            std::cerr << "  Wrote key: '" << memtable[j].key << "', value: '" << memtable[j].value << "'" << std::endl;
         }
         // Update offset for the next block
         currentOffset = outFile.tellp();
+        std::cerr << "Block ended, next offset: " << currentOffset << std::endl;
     }
 
     // --- 2. Write Index Block ---
     uint64_t indexOffset = currentOffset;
+    std::cerr << "Writing index block at offset: " << indexOffset << std::endl;
 
     // Write the total number of index entries.
     this->writeUint64(outFile, tempIndex.size());
@@ -188,14 +198,17 @@ bool SSTable::writeFromMemory(const std::vector<KeyValuePair> &memtable)
     {
         this->writeString(outFile, entry.first);  // The key
         this->writeUint64(outFile, entry.second); // The offset
+        std::cerr << "  Wrote index entry: key='" << entry.first << "', offset=" << entry.second << std::endl;
     }
 
     // --- 3. Write Footer (Index Block Offset) ---
     // The footer is a fixed-size pointer at the very end of the file
     // that tells us where the index block begins.
     this->writeUint64(outFile, indexOffset);
+    std::cerr << "Writing footer with index offset: " << indexOffset << std::endl;
 
     outFile.close();
+    std::cerr << "SSTable::writeFromMemory finished, file closed: " << filePath << std::endl;
     return true;
 }
 

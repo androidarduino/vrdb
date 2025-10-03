@@ -4,11 +4,17 @@
 #include <iostream>  // For std::cerr and std::cout
 #include <algorithm> // For std::sort
 #include <cstring>   // For memset
+#include <csignal>   // For signal handling
+#include <cerrno>    // For errno
 
 const std::string DATADIR = "data/"; // Define DATADIR for use in this file
 
 using namespace std;
 namespace fs = std::filesystem; // For filesystem operations
+
+// Initialize static members
+volatile sig_atomic_t Server::_running = 1;
+Server *Server::_instance = nullptr;
 
 /**
  * @brief Constructs a new Server object with a specified address and port.
@@ -51,6 +57,10 @@ Server::Server(const string &address, int port) : _server_fd(-1),
 
     this->storage = new Storage(this); // Initialize Storage with a pointer to this Server instance
     // RequestHandler is no longer used, removed initialization
+
+    _instance = this;                       // Set the static instance pointer
+    signal(SIGINT, Server::handle_signal);  // Register signal handler for Ctrl+C
+    signal(SIGTERM, Server::handle_signal); // Register signal handler for termination
 }
 
 /**
@@ -60,6 +70,7 @@ Server::~Server()
 {
     delete this->storage;
     // RequestHandler is no longer used, removed deletion
+    std::cout << "Server destructor called, calling shutdown()..." << std::endl;
     shutdown(); // Ensure socket is closed on destruction
 }
 
@@ -84,67 +95,84 @@ void Server::start()
         // After merge, sst should be the new merged table, and tables_to_merge should be cleared then re-populated with the new merged sst name.
     }
 
-    while (true)
+    while (_running)
     {
         cout << "\nWaiting for a connection..." << endl;
-        if ((_new_socket = accept(_server_fd, (struct sockaddr *)&_address, (socklen_t *)&_addrlen)) < 0)
-        {
-            perror("accept");
-            exit(EXIT_FAILURE);
-        }
+        _new_socket = accept(_server_fd, (struct sockaddr *)&_address, (socklen_t *)&_addrlen);
 
-        char buffer[1024] = {0};
-        long valread = read(_new_socket, buffer, 1024);
-        if (valread < 0)
+        if (_new_socket < 0)
         {
-            perror("read");
+            if (errno == EINTR)
+            {
+                if (_running == 0)
+                {
+                    std::cout << "Server interrupted by signal (EINTR), shutting down gracefully." << std::endl;
+                    break; // Exit the loop gracefully
+                }
+            }
+            else
+            {
+                perror("accept");
+                exit(EXIT_FAILURE);
+            }
+        }
+        else
+        {
+            // Original logic for handling successful accept and subsequent operations
+            char buffer[1024] = {0};
+            long valread = read(_new_socket, buffer, 1024);
+            if (valread < 0)
+            {
+                perror("read");
+                close(_new_socket);
+                continue;
+            }
+            string request_str(buffer, valread);
+            cout << "Received request: " << request_str << endl;
+
+            Request req = Request::deserialize(request_str);
+            Response res;
+
+            switch (req.type)
+            {
+            case RequestType::GET:
+            {
+                string value = get(req.key);
+                if (!value.empty())
+                {
+                    res = Response(true, "VALUE", value);
+                }
+                else
+                {
+                    res = Response(false, "Key not found: " + req.key);
+                }
+                break;
+            }
+            case RequestType::PUT:
+            {
+                bool success = put(req.key, req.value);
+                if (success)
+                {
+                    res = Response(true, "OK");
+                }
+                else
+                {
+                    res = Response(false, "Failed to put key: " + req.key);
+                }
+                break;
+            }
+            default:
+                res = Response(false, "Unknown request type");
+                break;
+            }
+
+            string response_str = res.serialize();
+            send(_new_socket, response_str.c_str(), response_str.length(), 0);
+            cout << "Sent response: " << response_str << endl;
             close(_new_socket);
-            continue;
         }
-        string request_str(buffer, valread);
-        cout << "Received request: " << request_str << endl;
-
-        Request req = Request::deserialize(request_str);
-        Response res;
-
-        switch (req.type)
-        {
-        case RequestType::GET:
-        {
-            string value = get(req.key);
-            if (!value.empty())
-            {
-                res = Response(true, "VALUE", value);
-            }
-            else
-            {
-                res = Response(false, "Key not found: " + req.key);
-            }
-            break;
-        }
-        case RequestType::PUT:
-        {
-            bool success = put(req.key, req.value);
-            if (success)
-            {
-                res = Response(true, "OK");
-            }
-            else
-            {
-                res = Response(false, "Failed to put key: " + req.key);
-            }
-            break;
-        }
-        default:
-            res = Response(false, "Unknown request type");
-            break;
-        }
-
-        string response_str = res.serialize();
-        send(_new_socket, response_str.c_str(), response_str.length(), 0);
-        cout << "Sent response: " << response_str << endl;
-        close(_new_socket);
     }
+    std::cout << "Server::start() loop finished." << std::endl;
 }
 
 /**
@@ -164,6 +192,8 @@ void Server::shutdown()
         close(_server_fd);
         _server_fd = -1;
     }
+    fflush(stdout);
+    fflush(stderr);
 }
 
 /**
@@ -412,6 +442,8 @@ void Storage::merge()
  */
 void Storage::flush_all_memtables_to_disk()
 {
+    std::cout << "Storage::flush_all_memtables_to_disk called." << std::endl;
+
     // Flush main_mdb if not empty
     if (!main_mdb->is_empty())
     {
@@ -422,6 +454,7 @@ void Storage::flush_all_memtables_to_disk()
         {
             this->tables_to_merge.push_back(flushed_filename);
             delete flushed_sst;
+            std::cout << "Successfully flushed main_mdb to " << flushed_filename << std::endl;
         }
         else
         {
@@ -440,6 +473,7 @@ void Storage::flush_all_memtables_to_disk()
         {
             this->tables_to_merge.push_back(flushed_filename);
             delete flushed_sst;
+            std::cout << "Successfully flushed second_mdb to " << flushed_filename << std::endl;
         }
         else
         {
@@ -452,4 +486,23 @@ void Storage::flush_all_memtables_to_disk()
     {
         this->tables_to_merge.push_back(this->sst->get_filename());
     }
+    std::cout << "Storage::flush_all_memtables_to_disk finished." << std::endl;
+}
+
+/**
+ * @brief Static signal handler for graceful server shutdown.
+ * @param signal The signal number received.
+ */
+void Server::handle_signal(int signal)
+{
+    std::cout << "Caught signal " << signal << ", initiating graceful shutdown..." << std::endl;
+    _running = 0; // Set the flag to stop the main loop
+    if (_instance)
+    {
+        // Call the shutdown method directly
+        _instance->shutdown();
+        // No need to close socket here, as shutdown() will handle it
+    }
+    // fflush(stdout);
+    // fflush(stderr);
 }
