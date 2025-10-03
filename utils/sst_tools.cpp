@@ -8,12 +8,14 @@
 #include <filesystem>
 #include <stdexcept>
 
+const std::string DATADIR = "data/"; // Define DATADIR for use in this file
+
 namespace fs = std::filesystem;
 
 // Function to list all key-value pairs in an SSTable
 void list_sst_file(const std::string &filename)
 {
-    SSTable sst(filename, true); // Load all data into memory for listing
+    SSTable sst(DATADIR + filename, true); // Load all data into memory for listing
     std::vector<KeyValuePair> kvs = sst.getAllKeyValues();
     if (kvs.empty())
     {
@@ -30,7 +32,7 @@ void list_sst_file(const std::string &filename)
 // Function to get a value for a given key from an SSTable
 void get_sst_value(const std::string &filename, const std::string &key)
 {
-    SSTable sst(filename, false); // No need to load all data for a single lookup
+    SSTable sst(DATADIR + filename, false); // No need to load all data for a single lookup
     std::optional<std::string> value = sst.find(key);
     if (value.has_value())
     {
@@ -46,7 +48,7 @@ void get_sst_value(const std::string &filename, const std::string &key)
 // This creates a new SSTable as SSTables are immutable
 void set_sst_value(const std::string &filename, const std::string &key, const std::string &value)
 {
-    SSTable original_sst(filename, true); // Load original data
+    SSTable original_sst(DATADIR + filename, true); // Load original data
     std::vector<KeyValuePair> kvs = original_sst.getAllKeyValues();
 
     // Convert to map for easy update
@@ -70,7 +72,7 @@ void set_sst_value(const std::string &filename, const std::string &key, const st
     // Create a new filename for the updated SSTable (e.g., original_updated_timestamp.sst)
     std::string updated_filename = fs::path(filename).stem().string() + "_updated_" + getCurrentUnixTimeString() + ".sst";
 
-    SSTable updated_sst_obj(updated_filename, false); // Create new SSTable object for writing
+    SSTable updated_sst_obj(DATADIR + updated_filename, false); // Create new SSTable object for writing, use DATADIR
     if (updated_sst_obj.writeFromMemory(updated_kvs))
     {
         std::cout << "Successfully updated/set key \"" << key << "\" in " << filename << ". New SSTable created: " << updated_filename << std::endl;

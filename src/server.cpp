@@ -5,6 +5,8 @@
 #include <algorithm> // For std::sort
 #include <cstring>   // For memset
 
+const std::string DATADIR = "data/"; // Define DATADIR for use in this file
+
 using namespace std;
 namespace fs = std::filesystem; // For filesystem operations
 
@@ -73,6 +75,14 @@ void Server::start()
         exit(EXIT_FAILURE);
     }
     cout << "Server listening on " << _server_address << ":" << _port << endl;
+
+    // Perform initial merge of existing SSTables if any
+    if (!storage->tables_to_merge.empty())
+    {
+        std::cout << "Triggering initial merge of existing SSTables..." << std::endl;
+        storage->merge();
+        // After merge, sst should be the new merged table, and tables_to_merge should be cleared then re-populated with the new merged sst name.
+    }
 
     while (true)
     {
@@ -143,6 +153,12 @@ void Server::start()
 void Server::shutdown()
 {
     cout << "Server shutting down..." << endl;
+    // Flush all in-memory data to disk before shutting down
+    if (storage)
+    {
+        storage->flush_all_memtables_to_disk();
+    }
+
     if (_server_fd != -1)
     {
         close(_server_fd);
@@ -195,7 +211,7 @@ string Server::get(const string &key)
     // Iterate through tables_to_merge (older SSTables) if not found in current sst
     for (const string &filename : this->storage->tables_to_merge)
     {
-        SSTable temp_sst(filename, true);
+        SSTable temp_sst(DATADIR + filename, true);
         auto result = temp_sst.find(key);
         if (result.has_value())
         {
@@ -221,7 +237,21 @@ string getCurrentUnixTimeString()
  * @brief Constructs a new Storage object.
  * @param server A pointer to the Server instance associated with this storage.
  */
-Storage::Storage(Server *server) : main_mdb(new MemTable()), second_mdb(new MemTable()), sst(nullptr), merging(false) {}
+Storage::Storage(Server *server) : main_mdb(new MemTable()), second_mdb(new MemTable()), sst(nullptr), merging(false)
+{
+    // Load existing SSTables from the data directory
+    if (fs::exists(DATADIR) && fs::is_directory(DATADIR))
+    {
+        for (const auto &entry : fs::directory_iterator(DATADIR))
+        {
+            if (entry.is_regular_file() && entry.path().extension() == ".sst")
+            {
+                tables_to_merge.push_back(entry.path().filename().string());
+                std::cout << "Loaded existing SSTable: " << entry.path().filename().string() << std::endl;
+            }
+        }
+    }
+}
 
 /**
  * @brief Checks if compaction (flushing MemTable to SSTable or merging SSTables) is needed.
@@ -287,9 +317,9 @@ void Storage::merge()
     for (const string &filename : this->tables_to_merge)
     {
         // Load SSTable data into memory for merging
-        SSTable *sst_to_load = new SSTable(filename, true);
+        SSTable *sst_to_load = new SSTable(DATADIR + filename, true); // Use DATADIR
         to_merge.push_back(sst_to_load);
-        to_merge_names.push_back(filename);
+        to_merge_names.push_back(DATADIR + filename);
 
         // Calculate bytes operated from input SSTables
         for (const auto &pair : sst_to_load->getAllKeyValues())
@@ -302,7 +332,7 @@ void Storage::merge()
 
     // The new_main_sst_name will be the name of the new SSTable after merging and renaming
     string new_main_sst_name = getCurrentUnixTimeString() + ".sst";
-    auto target_table = new SSTable(new_main_sst_name, false); // target_table will write to disk
+    auto target_table = new SSTable(DATADIR + new_main_sst_name, false); // Use DATADIR
 
     // merge the files into a new sst file
     SSTable *candidate;
@@ -374,4 +404,52 @@ void Storage::merge()
     auto end_time = chrono::high_resolution_clock::now();
     this->merge_time_ns += chrono::duration_cast<chrono::nanoseconds>(end_time - start_time).count();
     this->merge_bytes_operated += bytes_merged;
+}
+
+/**
+ * @brief Flushes all in-memory MemTables (main and second) to disk as SSTables.
+ * This method is typically called during server shutdown to ensure data persistence.
+ */
+void Storage::flush_all_memtables_to_disk()
+{
+    // Flush main_mdb if not empty
+    if (!main_mdb->is_empty())
+    {
+        std::cout << "Flushing main_mdb to disk during shutdown..." << std::endl;
+        string flushed_filename = getCurrentUnixTimeString() + ".sst";
+        SSTable *flushed_sst = main_mdb->flush(flushed_filename);
+        if (flushed_sst)
+        {
+            this->tables_to_merge.push_back(flushed_filename);
+            delete flushed_sst;
+        }
+        else
+        {
+            std::cerr << "Error: Failed to flush main_mdb to disk during shutdown." << std::endl;
+        }
+    }
+
+    // Flush second_mdb if not empty and not read-only
+    // (second_mdb might be the main_mdb just before a swap/flush)
+    if (!second_mdb->is_empty() && !second_mdb->readonly)
+    {
+        std::cout << "Flushing second_mdb to disk during shutdown..." << std::endl;
+        string flushed_filename = getCurrentUnixTimeString() + ".sst";
+        SSTable *flushed_sst = second_mdb->flush(flushed_filename);
+        if (flushed_sst)
+        {
+            this->tables_to_merge.push_back(flushed_filename);
+            delete flushed_sst;
+        }
+        else
+        {
+            std::cerr << "Error: Failed to flush second_mdb to disk during shutdown." << std::endl;
+        }
+    }
+    // Ensure that any existing sst is also moved to tables_to_merge if not already there
+    // This ensures consistency for the next startup and potential merging
+    if (this->sst && std::find(this->tables_to_merge.begin(), this->tables_to_merge.end(), this->sst->get_filename()) == this->tables_to_merge.end())
+    {
+        this->tables_to_merge.push_back(this->sst->get_filename());
+    }
 }

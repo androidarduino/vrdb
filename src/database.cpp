@@ -3,10 +3,13 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
+#include <filesystem>
+
+const std::string DATADIR = "data/"; // Define DATADIR for use in this file
 
 MemTable::MemTable()
 {
-    _storage_path = "./";
+    // _storage_path = "./"; // Removed as it's no longer used
 }
 
 SSTable *MemTable::flush(const string &filename)
@@ -19,7 +22,7 @@ SSTable *MemTable::flush(const string &filename)
     // SSTables require sorted data
     std::sort(sorted_data.begin(), sorted_data.end());
 
-    SSTable *new_sst = new SSTable(filename, false); // Create SSTable without loading data initially
+    SSTable *new_sst = new SSTable(DATADIR + filename, false); // Use DATADIR
     if (!new_sst->writeFromMemory(sorted_data))
     {
         delete new_sst;
@@ -66,12 +69,12 @@ long long MemTable::get_size_bytes() const
 // A smaller number means a larger index but smaller reads from disk.
 const size_t BLOCK_SIZE = 4;
 
-SSTable::SSTable(const std::string &filePath, bool loadData) : filePath(filePath)
+SSTable::SSTable(const std::string &filePath, bool loadData) : filePath(filePath) // Use DATADIR
 {
     if (loadData)
     {
         // Load all data into memory for merge operations
-        std::ifstream infile(filePath, std::ios::binary);
+        std::ifstream infile(this->filePath, std::ios::binary);
         if (!infile.is_open())
         {
             std::cerr << "Error: Could not open file for reading during loadData: " << filePath << std::endl;
@@ -132,12 +135,24 @@ uint64_t SSTable::readUint64(std::ifstream &in)
 
 bool SSTable::writeFromMemory(const std::vector<KeyValuePair> &memtable)
 {
+    std::filesystem::path dir_path = std::filesystem::path(filePath).parent_path();
+    std::cerr << "Attempting to create directories: " << dir_path << std::endl;
+    std::error_code ec;
+    if (!std::filesystem::create_directories(dir_path, ec))
+    {
+        std::cerr << "Error creating directories: " << dir_path << ", error: " << ec.message() << std::endl;
+        return false;
+    }
+
+    std::cerr << "Attempting to open file for writing: " << filePath << std::endl;
     std::ofstream outFile(filePath, std::ios::binary | std::ios::trunc);
     if (!outFile.is_open())
     {
-        std::cerr << "Error: Could not open file for writing: " << filePath << std::endl;
+        std::cerr << "Error: Could not open file for writing: " << filePath << " (errno: " << errno << ")" << std::endl;
         return false;
     }
+
+    std::cerr << "File opened successfully for writing: " << filePath << std::endl;
 
     std::map<std::string, uint64_t> tempIndex;
     uint64_t currentOffset = 0;
@@ -325,6 +340,22 @@ std::vector<KeyValuePair> SSTable::getAllKeyValues() const
         all_kvs.push_back({pair.first, pair.second});
     }
     return all_kvs;
+}
+
+/**
+ * @brief Returns the full file path of this SSTable.
+ * @return The file path as a string.
+ */
+std::string SSTable::get_filename() const
+{
+    // Extract just the filename from the full path
+    // This assumes filePath is in the format "data/filename.sst"
+    size_t last_slash_pos = filePath.rfind('/');
+    if (last_slash_pos != std::string::npos)
+    {
+        return filePath.substr(last_slash_pos + 1);
+    }
+    return filePath; // If no slash, filePath is just the filename
 }
 
 // These methods are not directly used with the current in-memory SSTable implementation

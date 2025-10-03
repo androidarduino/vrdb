@@ -69,6 +69,12 @@ public: // Changed for testing purposes
     long long get_flush_bytes_operated() const { return flush_bytes_operated; }
     long long get_merge_bytes_operated() const { return merge_bytes_operated; }
 
+    /**
+     * @brief Flushes all in-memory MemTables (main and second) to disk as SSTables.
+     * This method is typically called during server shutdown to ensure data persistence.
+     */
+    void flush_all_memtables_to_disk();
+
 private:
     /**
      * @brief Flag indicating if a merge operation is currently in progress.

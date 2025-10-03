@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <algorithm>
 #include <sstream>
+#include <limits> // Required for std::numeric_limits
 
 const int PORT = 5991;               // Default server port
 const char *SERVER_IP = "127.0.0.1"; // Default server IP
@@ -71,7 +72,10 @@ int main()
     while (true)
     {
         std::cout << "> ";
-        std::getline(std::cin, line);
+        if (!std::getline(std::cin, line))
+        {          // Check if getline fails (e.g., EOF or error)
+            break; // Exit loop on failure
+        }
 
         std::istringstream iss(line);
         std::string command;

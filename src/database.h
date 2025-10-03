@@ -180,6 +180,12 @@ public:
      */
     std::optional<std::string> find(const std::string &key);
 
+    /**
+     * @brief Returns the full file path of this SSTable.
+     * @return The file path as a string.
+     */
+    std::string get_filename() const; // New method declaration
+
 private:
     std::string filePath;
     map<string, string> data;

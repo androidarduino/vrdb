@@ -6,6 +6,7 @@ TESTDIR = tests/
 UTILSDIR = utils/
 BUILDDIR = build/
 TMPDIR = tmp/
+DATADIR = data/
 
 # Source files
 SERVER_SRCS = $(SRCDIR)server.cpp $(SRCDIR)database.cpp
@@ -55,6 +56,9 @@ $(BUILDDIR):
 $(TMPDIR):
 	mkdir -p $(TMPDIR)
 
+$(DATADIR):
+	mkdir -p $(DATADIR)
+
 # General rule for compiling source files in src/ to object files in tmp/
 $(TMPDIR)%.o: $(SRCDIR)%.cpp | $(TMPDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -97,4 +101,4 @@ $(DB_CLI_EXEC): $(DB_CLI_OBJ) $(BUILDDIR)libserver.a
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 clean:
-	rm -rf $(BUILDDIR) $(TMPDIR) *.sst
+	rm -rf $(BUILDDIR) $(TMPDIR) $(DATADIR) *.sst
